@@ -5,17 +5,38 @@ resource "aws_vpc" "terraform-vpc" {
     env  = "dev"
   }
 }
-resource "aws_subnet" "terraform-public-subnet" {
+resource "aws_subnet" "terraform-public-subnet1" {
   vpc_id     = aws_vpc.terraform-vpc.id
   cidr_block = "10.0.1.0/24"
+  availability_zone = "us-east-1a"
   tags = {
     Name = "terraform-public-subnet"
     env  = "dev"
   }
 }
-resource "aws_subnet" "terraform-private-subnet" {
+resource "aws_subnet" "terraform-public-subnet2" {
+  vpc_id     = aws_vpc.terraform-vpc.id
+  cidr_block = "10.0.3.0/24"
+  availability_zone = "us-east-1b"
+  tags = {
+    Name = "terraform-public-subnet"
+    env  = "dev"
+  }
+}
+resource "aws_subnet" "terraform-private-subnet1" {
   vpc_id     = aws_vpc.terraform-vpc.id
   cidr_block = "10.0.2.0/24"
+  availability_zone = "us-east-1a"
+
+  tags = {
+    Name = "terraform-private-subnet"
+    env  = "dev"
+  }
+}
+resource "aws_subnet" "terraform-private-subnet2" {
+  vpc_id     = aws_vpc.terraform-vpc.id
+  cidr_block = "10.0.4.0/24"
+  availability_zone = "us-east-1b"
 
   tags = {
     Name = "terraform-private-subnet"
@@ -24,7 +45,6 @@ resource "aws_subnet" "terraform-private-subnet" {
 }
 resource "aws_internet_gateway" "my-gateway" {
   vpc_id = aws_vpc.terraform-vpc.id
-
   tags = {
     Name = "internet-gateway"
     env  = "dev"
@@ -32,7 +52,6 @@ resource "aws_internet_gateway" "my-gateway" {
 }
 resource "aws_route_table" "public-rt" {
   vpc_id = aws_vpc.terraform-vpc.id
-
   route {
     cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.my-gateway.id
@@ -48,7 +67,7 @@ resource "aws_eip" "random_eip" {
 }
 
 resource "aws_nat_gateway" "ngw" {
-  subnet_id = aws_subnet.terraform-public-subnet.id
+  subnet_id = aws_subnet.terraform-public-subnet1.id
   allocation_id = aws_eip.random_eip.id
 
   tags = {
@@ -71,14 +90,21 @@ resource "aws_route_table" "private-rt" {
   }
 }
 resource "aws_route_table_association" "my-association1" {
-  subnet_id      = aws_subnet.terraform-public-subnet.id
+  subnet_id      = aws_subnet.terraform-public-subnet1.id
   route_table_id = aws_route_table.public-rt.id
 }
 resource "aws_route_table_association" "my-association2" {
-  subnet_id      = aws_subnet.terraform-private-subnet.id
+  subnet_id      = aws_subnet.terraform-private-subnet1.id
   route_table_id = aws_route_table.private-rt.id
 }
-
+resource "aws_route_table_association" "my-association3" {
+  subnet_id      = aws_subnet.terraform-public-subnet2.id
+  route_table_id = aws_route_table.public-rt.id
+}
+resource "aws_route_table_association" "my-association4" {
+  subnet_id      = aws_subnet.terraform-private-subnet2.id
+  route_table_id = aws_route_table.private-rt.id
+}
 resource "aws_network_acl" "my-nacl" {
   vpc_id = aws_vpc.terraform-vpc.id
 
@@ -137,13 +163,20 @@ resource "aws_network_acl" "my-nacl" {
 }
 resource "aws_network_acl_association" "my-nacl-association1" {
   network_acl_id = aws_network_acl.my-nacl.id
-  subnet_id      = aws_subnet.terraform-public-subnet.id
+  subnet_id      = aws_subnet.terraform-public-subnet1.id
 }
 resource "aws_network_acl_association" "my-nacl-association2" {
   network_acl_id = aws_network_acl.my-nacl.id
-  subnet_id      = aws_subnet.terraform-private-subnet.id
+  subnet_id      = aws_subnet.terraform-private-subnet1.id
 }
-
+resource "aws_network_acl_association" "my-nacl-association3" {
+  network_acl_id = aws_network_acl.my-nacl.id
+  subnet_id      = aws_subnet.terraform-public-subnet2.id
+}
+resource "aws_network_acl_association" "my-nacl-association4" {
+  network_acl_id = aws_network_acl.my-nacl.id
+  subnet_id      = aws_subnet.terraform-private-subnet2.id
+}
 resource "aws_security_group" "my-sg" {
   name        = "allow_https_http_ssh"
   description = "Allow https,http & ssh inbound traffic and all outbound traffic"
