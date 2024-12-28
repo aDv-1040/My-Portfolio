@@ -63,8 +63,8 @@ resource "aws_route_table" "public-rt" {
   }
 }
 resource "aws_eip" "random_eip" {
-  vpc = true
-}
+  domain = "vpc"
+  }
 
 resource "aws_nat_gateway" "ngw" {
   subnet_id     = aws_subnet.terraform-public-subnet1.id
@@ -231,7 +231,7 @@ resource "aws_lb" "backend-lb-tf" {
   load_balancer_type         = "application"
   security_groups            = [aws_security_group.my-sg.id]
   subnets                    = [aws_subnet.terraform-private-subnet1.id, aws_subnet.terraform-private-subnet2.id]
-  enable_deletion_protection = true
+  enable_deletion_protection = false
 
   tags = {
     Environment = "production"
@@ -253,14 +253,10 @@ resource "aws_lb_target_group" "target-group" {
 
 resource "aws_launch_template" "my-template" {
   name = "my-template"
-
-  # Your launch template configurations
   image_id      = "ami-0166fe664262f664c"
   instance_type = "c5.large"
   key_name      = "firstkeypair"
   user_data     = filebase64("${path.module}/nginx-userdata.sh")
-
-  # Other configurations...
 }
 
 resource "aws_autoscaling_group" "my-asg" {
@@ -289,4 +285,139 @@ resource "aws_lb_listener" "listener" {
     target_group_arn = aws_lb_target_group.target-group.arn
   }
 }
+
+
+  resource "aws_db_instance" "my-db" {
+  allocated_storage    = 20
+  engine               = "postgres"
+  engine_version       = "16.3"
+  instance_class       = "db.t3.micro"
+  username             = "adv"
+  password             = "password123"
+  publicly_accessible  = false
+  vpc_security_group_ids = [aws_security_group.db-sg.id]
+  db_subnet_group_name = aws_db_subnet_group.db-subnet-group.name
+  skip_final_snapshot = true
+  tags = {
+    Name = "postgres-db"
+  }
+}
+
+resource "aws_db_subnet_group" "db-subnet-group" {
+  name       = "db-subnet-group"
+  subnet_ids = [aws_subnet.terraform-private-subnet1.id, aws_subnet.terraform-private-subnet2.id]
+
+  tags = {
+    Name = "db-subnet-group"
+  }
+}
+
+resource "aws_security_group" "db-sg" {
+  name        = "db-sg"
+  description = "Allow database access from backend"
+  vpc_id      = aws_vpc.terraform-vpc.id
+
+  ingress {
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"] # Adjust to match back-end subnet range
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "db-sg"
+  }
+}
+
+resource "aws_lb" "frontend-lb" {
+  name               = "frontend-lb-tf"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.my-sg.id]
+  subnets            = [aws_subnet.terraform-public-subnet1.id, aws_subnet.terraform-public-subnet2.id]
+
+  tags = {
+    Environment = "production"
+  }
+}
+
+resource "aws_lb_target_group" "frontend-target-group" {
+  port     = 80
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.terraform-vpc.id
+
+  health_check {
+    path                = "/"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+  }
+
+  tags = {
+    Name = "frontend-target-group"
+  }
+}
+
+resource "aws_launch_template" "frontend-template" {
+  name          = "frontend-template"
+  image_id      = "ami-0166fe664262f664c" # Update as needed
+  instance_type = "t3.micro"
+  key_name      = "firstkeypair"
+  #user_data     = filebase64("${path.module}/frontend-userdata.sh")
+
+  tag_specifications {
+    resource_type = "instance"
+
+    tags = {
+      Name = "frontend-instance"
+    }
+  }
+}
+
+resource "aws_autoscaling_group" "frontend-asg" {
+  desired_capacity    = 3
+  min_size            = 2
+  max_size            = 5
+  vpc_zone_identifier = [aws_subnet.terraform-public-subnet1.id, aws_subnet.terraform-public-subnet2.id]
+
+  launch_template {
+    id      = aws_launch_template.frontend-template.id
+    version = "$Latest"
+  }
+
+  health_check_type         = "EC2"
+  health_check_grace_period = 300
+  target_group_arns         = [aws_lb_target_group.frontend-target-group.arn]
+}
+
+resource "aws_lb_listener" "frontend-listener" {
+  load_balancer_arn = aws_lb.frontend-lb.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.frontend-target-group.arn
+  }
+}
+
+output "frontend_alb_dns" {
+  value = aws_lb.frontend-lb.dns_name
+}
+
+output "db_endpoint" {
+  value = aws_db_instance.my-db.endpoint
+}
+
+
+
+
 
