@@ -1,48 +1,34 @@
 resource "aws_vpc" "terraform-vpc" {
-  cidr_block = "10.0.0.0/16"
-  tags = {
-    Name = "terraform-vpc"
-    env  = "dev"
-  }
+    cidr_block = var.vpc_cidr_block
+  tags = var.tags
 }
+
 resource "aws_subnet" "terraform-public-subnet1" {
   vpc_id            = aws_vpc.terraform-vpc.id
-  cidr_block        = "10.0.1.0/24"
-  availability_zone = "us-east-1a"
-  tags = {
-    Name = "terraform-public-subnet"
-    env  = "dev"
-  }
+  cidr_block        = var.subnet_cidr_blocks["public1"] 
+  availability_zone = var.availability_zones[0]
+  tags = var.tags
 }
 resource "aws_subnet" "terraform-public-subnet2" {
   vpc_id            = aws_vpc.terraform-vpc.id
-  cidr_block        = "10.0.3.0/24"
-  availability_zone = "us-east-1b"
-  tags = {
-    Name = "terraform-public-subnet"
-    env  = "dev"
-  }
+  cidr_block        = var.subnet_cidr_blocks["public2"]
+  availability_zone = var.availability_zones[1]
+  tags = var.tags
 }
+
 resource "aws_subnet" "terraform-private-subnet1" {
   vpc_id            = aws_vpc.terraform-vpc.id
-  cidr_block        = "10.0.2.0/24"
-  availability_zone = "us-east-1a"
-
-  tags = {
-    Name = "terraform-private-subnet"
-    env  = "dev"
-  }
+  cidr_block        = var.subnet_cidr_blocks["private1"]
+  availability_zone = var.availability_zones[0]
+  tags = var.tags 
 }
 resource "aws_subnet" "terraform-private-subnet2" {
   vpc_id            = aws_vpc.terraform-vpc.id
-  cidr_block        = "10.0.4.0/24"
-  availability_zone = "us-east-1b"
-
-  tags = {
-    Name = "terraform-private-subnet"
-    env  = "dev"
+  cidr_block        = var.subnet_cidr_blocks["private2"]
+  availability_zone = var.availability_zones[1]
+  tags = var.tags
   }
-}
+
 resource "aws_internet_gateway" "my-gateway" {
   vpc_id = aws_vpc.terraform-vpc.id
   tags = {
@@ -50,18 +36,16 @@ resource "aws_internet_gateway" "my-gateway" {
     env  = "dev"
   }
 }
+
 resource "aws_route_table" "public-rt" {
   vpc_id = aws_vpc.terraform-vpc.id
   route {
     cidr_block = "0.0.0.0/0"
     gateway_id = aws_internet_gateway.my-gateway.id
   }
-
-  tags = {
-    Name = "public-rt"
-    env  = "dev"
-  }
+  tags =var.tags
 }
+
 resource "aws_eip" "random_eip" {
   domain = "vpc"
   }
@@ -69,11 +53,7 @@ resource "aws_eip" "random_eip" {
 resource "aws_nat_gateway" "ngw" {
   subnet_id     = aws_subnet.terraform-public-subnet1.id
   allocation_id = aws_eip.random_eip.id
-
-  tags = {
-    Name = "gw NAT"
-    env  = "dev"
-  }
+  tags = var.tags
 }
 
 resource "aws_route_table" "private-rt" {
@@ -83,11 +63,7 @@ resource "aws_route_table" "private-rt" {
     cidr_block     = "0.0.0.0/0"
     nat_gateway_id = aws_nat_gateway.ngw.id
   }
-
-  tags = {
-    name = "private-rt"
-    env  = "dev"
-  }
+  tags = var.tags
 }
 resource "aws_route_table_association" "my-association1" {
   subnet_id      = aws_subnet.terraform-public-subnet1.id
@@ -233,9 +209,7 @@ resource "aws_lb" "backend-lb-tf" {
   subnets                    = [aws_subnet.terraform-private-subnet1.id, aws_subnet.terraform-private-subnet2.id]
   enable_deletion_protection = false
 
-  tags = {
-    Environment = "production"
-  }
+  tags = var.tags
 }
 resource "aws_lb_target_group" "target-group" {
   port     = 80
@@ -243,26 +217,26 @@ resource "aws_lb_target_group" "target-group" {
   vpc_id   = aws_vpc.terraform-vpc.id
 
   health_check {
-    path                = "/health"
-    interval            = 30
-    timeout             = 5
-    healthy_threshold   = 2
-    unhealthy_threshold = 2
+    path                = var.path
+    interval            = var.interval
+    timeout             = var.timeout
+    healthy_threshold   = var.healthy_threshold
+    unhealthy_threshold = var.unhealthy_threshold
   }
 }
 
 resource "aws_launch_template" "my-template" {
   name = "my-template"
-  image_id      = "ami-0166fe664262f664c"
-  instance_type = "c5.large"
-  key_name      = "firstkeypair"
+  image_id      = var.image_id
+  instance_type = var.instance_type
+  key_name      = var.key_name
   user_data     = filebase64("${path.module}/nginx-userdata.sh")
 }
 
 resource "aws_autoscaling_group" "my-asg" {
-  desired_capacity    = 5
-  min_size            = 3
-  max_size            = 7
+  desired_capacity    = var.desired_capacity
+  min_size            = var.min_size
+  max_size            = var.max_size
   vpc_zone_identifier = [aws_subnet.terraform-private-subnet1.id, aws_subnet.terraform-private-subnet2.id]
 
   launch_template {
@@ -270,8 +244,8 @@ resource "aws_autoscaling_group" "my-asg" {
     version = "$Latest"
   }
   health_check_type         = "EC2"
-  health_check_grace_period = 300
-  force_delete              = true
+  health_check_grace_period = var.health_check_grace_period
+  force_delete              = var.force_delete
 }
 
 
@@ -286,30 +260,24 @@ resource "aws_lb_listener" "listener" {
   }
 }
 
-
   resource "aws_db_instance" "my-db" {
-  allocated_storage    = 20
-  engine               = "postgres"
-  engine_version       = "16.3"
-  instance_class       = "db.t3.micro"
-  username             = "adv"
-  password             = "password123"
+  allocated_storage    = var.allocated_storage
+  engine               = var.db_engine
+  engine_version       = var.db_engine_version
+  instance_class       = var.db_instance_class
+  username             = var.db_instance_username
+  password             = var.db_instance_password
   publicly_accessible  = false
   vpc_security_group_ids = [aws_security_group.db-sg.id]
   db_subnet_group_name = aws_db_subnet_group.db-subnet-group.name
   skip_final_snapshot = true
-  tags = {
-    Name = "postgres-db"
-  }
+  tags = var.tags
 }
 
 resource "aws_db_subnet_group" "db-subnet-group" {
   name       = "db-subnet-group"
   subnet_ids = [aws_subnet.terraform-private-subnet1.id, aws_subnet.terraform-private-subnet2.id]
-
-  tags = {
-    Name = "db-subnet-group"
-  }
+  tags = var.tags
 }
 
 resource "aws_security_group" "db-sg" {
@@ -330,10 +298,7 @@ resource "aws_security_group" "db-sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
-  tags = {
-    Name = "db-sg"
-  }
+  tags = var.tags
 }
 
 resource "aws_lb" "frontend-lb" {
@@ -342,10 +307,7 @@ resource "aws_lb" "frontend-lb" {
   load_balancer_type = "application"
   security_groups    = [aws_security_group.my-sg.id]
   subnets            = [aws_subnet.terraform-public-subnet1.id, aws_subnet.terraform-public-subnet2.id]
-
-  tags = {
-    Environment = "production"
-  }
+  tags = var.tags
 }
 
 resource "aws_lb_target_group" "frontend-target-group" {
@@ -354,16 +316,13 @@ resource "aws_lb_target_group" "frontend-target-group" {
   vpc_id   = aws_vpc.terraform-vpc.id
 
   health_check {
-    path                = "/"
-    interval            = 30
-    timeout             = 5
-    healthy_threshold   = 2
-    unhealthy_threshold = 2
+    path                = var.path
+    interval            = var.interval
+    timeout             = var.timeout
+    healthy_threshold   = var.healthy_threshold
+    unhealthy_threshold = var.unhealthy_threshold
   }
-
-  tags = {
-    Name = "frontend-target-group"
-  }
+  tags = var.tags
 }
 
 resource "aws_launch_template" "frontend-template" {
@@ -375,17 +334,14 @@ resource "aws_launch_template" "frontend-template" {
 
   tag_specifications {
     resource_type = "instance"
-
-    tags = {
-      Name = "frontend-instance"
-    }
+    tags = var.tags
   }
 }
 
 resource "aws_autoscaling_group" "frontend-asg" {
-  desired_capacity    = 3
-  min_size            = 2
-  max_size            = 5
+  desired_capacity    = var.desired_capacity
+  min_size            = var.min_size
+  max_size            = var.max_size
   vpc_zone_identifier = [aws_subnet.terraform-public-subnet1.id, aws_subnet.terraform-public-subnet2.id]
 
   launch_template {
